@@ -1,0 +1,36 @@
+//USAGE: ./gradlew parse -Pworkflow={nameOfWorkflow}
+buildscript {
+	repositories {
+        maven { url "http://hudson.colo.networkedinsights.com/nexus/content/groups/public-snapshots/" }
+        maven { url "http://hudson.colo.networkedinsights.com/nexus/content/groups/public/" }    
+        mavenLocal()
+	}
+
+  
+    configurations.classpath.exclude group: 'args4j', module: 'args4j'
+    configurations.classpath.exclude group: 'com.ni', module: 'ods'
+    configurations.classpath.exclude group: 'com.ni', module: 'commons-oozie'
+
+
+	dependencies {
+	    classpath "com.ni:gru-impl-classes:1.3.1" 
+	    classpath "com.ni:ni-config-dev1:2.0.0-SNAPSHOT" 
+	}
+}
+
+
+task parse << { 
+   com.ni.api.gru.impl.dsl.DslParser dslParser = new com.ni.api.gru.impl.dsl.DslParser()
+   
+   println "Parsing................."
+   def rslt = dslParser.parseFromDslWorkflow(dslParser.getWorkflowFromPath("src/main/resources/apps/${workflow}.wf"), [:])
+   println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+   println "!!!!!!!!!!!!!!! SUCCESS !!!!!!!!!!!!!!!"
+   println "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+   println rslt
+}
+
+task wrapper(type: Wrapper) {
+	gradleVersion = "1.12"
+}

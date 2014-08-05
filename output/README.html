@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>example</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link type="text/css" rel="stylesheet" href="assets/css/prettify.css"/>
+    
+
+    <script type="text/javascript" src="//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+    <script type="text/javascript" src="assets/js/prettify.js"></script>
+
+  </head>
+<body onload="prettyPrint()">
+
+  <div id="wrapper">
+    <div id="header">
+
+    </div>
+
+    <div class="clear"></div>
+    <div id="main">
+      <div id="content" class="post">
+
+        <a name="gru_workflow_guide_v1_0"></a><h2>Gru Workflow Guide v1.0<a class="anchorlink" href="#gru_workflow_guide_v1_0"></a></h2>
+<a name="what_is_gru"></a><h4>What Is Gru<a class="anchorlink" href="#what_is_gru"></a></h4>
+<p><a href="http://gru.colo.networkedinsights.com/index.html">Gru</a> is a swiss army ETL and workflow tool to enable a developer to write workflows combining any downstream system into a cohesive set of actions.  It is customized for the Networked Insights environment, with hooks for the systems we have in house, and uses Gatekeeper as its global locking mechanism.</p>
+<a name="how_gru_workflows_work"></a><h4>How Gru Workflows Work<a class="anchorlink" href="#how_gru_workflows_work"></a></h4>
+<p>In Gru, a workflow specifies a number of steps that are to be run in order.  This is useful for grouping together related elements into a cohesive set of procedures with a related purpose - for example, the hourly hive fact load.  </p>
+<p>Gru can interact with the following downstream systems:
+<em> PDI
+</em> Jobtrain 
+<em> Greenplum
+</em> Any RESTful webservice
+<em> Borg Oozie
+</em> Gatekeeper 
+* Custom spring-aware java/groovy processes inside of Gru</p>
+<p>There is a UI to run workflows, and tools-jobs can also be used to cron requests through the REST interface.</p>
+<p>For now, all Gru workflows are like singletons in tools-jobs - <strong>only one invocation</strong> of the workflow can run at a time.  If a workflow request comes through while one is currently running, it will halt and not be processed or recorded.</p>
+<a name="some_other_features"></a><h5>Some other features<a class="anchorlink" href="#some_other_features"></a></h5>
+<ul class="list">
+<li>branching via if/else statements</li>
+<li>parallel processing via forkSteps</li>
+<li><a href="http://groovy.codehaus.org/Strings+and+GString">gStrings</a></li>
+<li>Ability to pass in dynamic parameters per workflow request</li>
+<li>Ability to pass results of steps down to dependent steps</li>
+<li>Custom scriptlets inside of workflow file definition</li>
+<li>Email notification on success and failure, stacktrace of failure included</li>
+</ul>
+<a name="how_to_create_a_workflow"></a><h4>How To Create A Workflow<a class="anchorlink" href="#how_to_create_a_workflow"></a></h4>
+<p>Workflows live <a href="http://svn.colo.networkedinsights.com/repos/repo/projects/apps/trunk/workflows/gru-workflows/">in svn</a> next to oozie workflows and get deployed to hdfs via the dcache plugin.  Each file must end with .wf and live in /src/main/resources/apps.  1 file = 1 workflow.</p>
+<p>All workflows must provide a workflow block and some meta information.  Gatekeeper locks that will be requested and held the entire workflow may go in the meta block as well.</p>
+<pre class="prettyprint">workflow  {
+
+    meta (
+        name : &#39;Name of my workflow&#39;,
+        description : &#39;Optional description of my workflow&#39;,
+        email : &#39;&lt;comma delimited list of email addresses&gt;&#39;,
+        gatekeeperLocks : [
+            gatekeeperLock (
+                lockType : &#39;WRITE&#39;, 
+                lockName : &quot;&lt;lockName goes here&gt;&quot;
+            )
+            [, gatekeeperLock(...)]
+        ]
+    )
+
+    &lt;Steps go here&gt;
+}</pre>
+<a name="step_types_and_example_invocations"></a><h4>Step Types and example invocations<a class="anchorlink" href="#step_types_and_example_invocations"></a></h4>
+<a name="pdi"></a><h5>PDI<a class="anchorlink" href="#pdi"></a></h5>
+<p>Interacts via the <a href="http://svn.colo.networkedinsights.com/repos/repo/projects/warehouse/trunk/services/pentaho-kettle/pentaho-kettle-client/src/main/java/com/ni/api/pentaho/client/KettleClient.java">pentaho kettle client</a>.  Will use the environment base that corresponds to which environment Gru is running.</p>
+<p><em>Type string:</em> <code>pdi</code></p>
+<h6>Required:</h6>
+<pre class="prettyprint">* pdiType: JOB or TRANSFORMATION
+* name: name of file on server</pre>
+<h6>Example:</h6>
+<pre class="prettyprint">    step (
+        name : &#39;pdi step&#39;,
+        description : &#39;pdi step&#39;,
+        type : &#39;pdi&#39;,
+        params : [
+            &#39;pdiType&#39; : &#39;JOB&#39;,
+            &#39;name&#39; : &#39;dashboard__brand_profile_transfer.kjb&#39;
+        ]
+    )</pre>
+<a name="jobtrain"></a><h5>Jobtrain<a class="anchorlink" href="#jobtrain"></a></h5>
+<p>Interacts via the <a href="http://svn.colo.networkedinsights.com/repos/repo/projects/apps/trunk/services/jobtrain/jobtrain-client/src/main/java/com/ni/api/jobtrain/client/JobTrainClient.java">jobtrain client</a>.  Will use environment base as well.</p>
+<p><em>Type string:</em> <code>jobtrain</code></p>
+<h6>Required:</h6>
+<pre class="prettyprint">* params: everything in params will be wired in to jobtrain verbatim.</pre>
+<h6>Optional:</h6>
+<pre class="prettyprint">* partitionInfo: partition info to be turned into gatekeeper locks</pre>
+<h6>Example:</h6>
+<pre class="prettyprint">step (
+        name : &#39;Jobtrain Post Fact&#39;,
+        description : &#39;Load post_fact with newly imported media_recent_v3 data&#39;,
+        type : &#39;jobtrain&#39;,
+        partitionInfo : [
+            partitionInfo (
+                lockType: &#39;READ&#39;, 
+                attribute : &quot;${appProps[&#39;oozie.hive.import.table.recent&#39;]}.imported_day&quot;, 
+                format : &quot;yyyy-MM-dd&quot;,
+                from : &#39;deferred: { workflow.workflowParams[&quot;previousImportedDay&quot;] }&#39;,
+                to : &#39;deferred: { workflow.workflowParams[&quot;importedDay&quot;] }&#39;
+            ),
+            partitionInfo (
+                lockType: &#39;WRITE&#39;, 
+                attribute : &quot;post_fact_${env}.imported_timestamp&quot;, 
+                format : &quot;&quot;,
+                from : &quot;1&quot;,
+                to : &quot;1&quot;
+            ),
+        ],
+        params :  [
+            &quot;workflow.project&quot; : &quot;entityloader&quot;,
+            &quot;workflow.name&quot; : &quot;entityloader-full-post-fact&quot;,
+            &quot;workflow.version&quot; : &quot;latest&quot;,
+            &quot;queueName&quot; : &quot;import&quot;,
+
+            &quot;importedTimestamp&quot; : &#39;deferred: { workflow.workflowParams[&quot;importedTimestamp&quot;] }&#39;,
+            &quot;lookbackDay&quot; : timeUtils.getLookbackDay(),
+            &quot;dedupeLookbackTimestamp&quot; : timeUtils.getDedupeLookbackTimestamp(),
+
+            &quot;postFactPointer&quot; : &#39;deferred: { workflow.workflowParams[&quot;postFactPointer&quot;] }&#39;,
+            &quot;mediaRecentPointer&quot; : &#39;deferred: { workflow.workflowParams[&quot;mediaRecentPointer&quot;] }&#39;,
+
+            &quot;mediaTable&quot; : appProps[&#39;oozie.hive.import.table.recent&#39;]
+        ]
+    )</pre>
+<a name="greenplum"></a><h5>Greenplum<a class="anchorlink" href="#greenplum"></a></h5>
+<p>Call a function or execute arbitrary commands against Greenplum.  Spins up a thin thread and periodically checks until completed.  Calling a function is the default mechanism, and assumes an ordered key/value set of items in params to wire into the procedure.  Calling verbatim commands is turned on via the <strong>runVerbatim</strong> flag in params.</p>
+<p><em>Type string:</em> <code>greenplum</code></p>
+<h6>Required</h6>
+<pre class="prettyprint">* procedure: what to call</pre>
+<h6>Optional</h6>
+<pre class="prettyprint">* params: ordered set of params to be wired into the function if not running verbatim.</pre>
+<h6>Example Procedure</h6>
+<pre class="prettyprint">    step (
+        name : &#39;Pull Hive dataview_interest_fact_dashboard into Greenplum&#39;,
+        description : &#39;Refresh updated facts from hive&#39;,
+        type : &#39;greenplum&#39;,
+        procedure : &#39;etl_app.classified_etl_dataview_interest_fact&#39;,
+        params : [
+            &#39;0&#39; : gruProps[&#39;days.to.lookback.for.greenplum&#39;]
+        ],
+        gatekeeperLocks : [
+            gatekeeperLock (
+                lockType : &#39;READ&#39;, 
+                lockName : &quot;jobtrain-impl-dataview_interest_fact_dashboard_${env}.authored_date-${timeUtils.getImportedDay()}&quot;
+            )
+        ]
+    )</pre>
+<h6>Example verbatim</h6>
+<pre class="prettyprint">    step (
+        name : &#39;Vacuum Facts&#39;,
+        description : &#39;Vacuum facts from hive&#39;,
+        type : &#39;greenplum&#39;,
+        procedure : &#39;vacuum analyze classification.dataview_interest_fact;&#39;,
+        params :  [
+            &quot;runVerbatim&quot; : &quot;true&quot;
+        ]
+    )</pre>
+<a name="restful_webservice"></a><h5>RESTful Webservice<a class="anchorlink" href="#restful_webservice"></a></h5>
+<p>There are two java step types that can call out to endpoints given a VERB and contentType.  Async fires and forgets, Synchronous will wait until complete, or timeout.</p>
+<p><em>className:</em> <code>&#39;com.ni.api.gru.impl.commands.javasteps.reststeps.AsyncRestStep&#39;</code>
+<em>className:</em> <code>&#39;com.ni.api.gru.impl.commands.javasteps.reststeps.SynchronousRestStep&#39;</code></p>
+<h6>Required params</h6>
+<pre class="prettyprint">* url: full url to call
+* verb: GET POST etc
+* contentType application/json etc</pre>
+<h6>Example</h6>
+<pre class="prettyprint">step (
+        name : &#39;Generate site comparison report&#39;,
+        description : &#39;es-hive comparison report&#39;,
+        type : &#39;java&#39;,
+        className : &#39;com.ni.api.gru.impl.commands.javasteps.reststeps.AsyncRestStep&#39;,
+        params : [
+            &quot;url&quot; : &quot;http://labs.colo.networkedinsights.com:30099/report?type=Site&quot;,
+            &quot;verb&quot; : &quot;GET&quot;,
+            &quot;contentType&quot; : &quot;application/json&quot;
+        ]
+    )</pre>
+<a name="borg_oozie"></a><h5>Borg oozie<a class="anchorlink" href="#borg_oozie"></a></h5>
+<p>Submit a job directly to oozie on borg.</p>
+<p><em>Type string:</em> <code>borg</code></p>
+<h6>Required</h6>
+<pre class="prettyprint">* params: everything that needs to be passed into the oozie job</pre>
+<h6>Example</h6>
+<pre class="prettyprint">    step (
+        name : &#39;borg&#39;,
+        description : &#39;borg&#39;,
+        type : &#39;borg&#39;,
+        params : [
+            &#39;workflow.name&#39; : &#39;copy-dataview-interest-fact-recent-partitions&#39;,
+            &#39;workflow.version&#39; : &#39;latest&#39;,
+            &#39;workflow.project&#39; : &#39;analytics-workflows&#39;,
+            &#39;nameNodeProd&#39; : &#39;hdfs://nn1prod.colo.networkedinsights.com:8020&#39;,
+            &#39;queueName&#39; : &#39;default&#39;
+        ]
+    )</pre>
+<a name="custom_java_groovy"></a><h5>Custom Java/Groovy<a class="anchorlink" href="#custom_java_groovy"></a></h5>
+<p>Call a custom step in a spring-aware environment.  In order to create a custom step, make a new class in <code>com.ni.api.gru.impl.commands.javasteps</code> and implement <code>Callable&lt;Map&lt;String,String&gt;&gt; getStepImpl(Map&lt;String,String&gt; workflowParams, Map&lt;String,String&gt; stepParams)</code>.</p>
+<h6>Example java</h6>
+<pre class="prettyprint">package com.ni.api.gru.impl.commands.javasteps
+
+import java.util.concurrent.Callable
+
+import javax.annotation.Resource
+
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+
+import com.ni.api.gru.impl.util.Mailer
+
+class EmailingStep extends JavaStepImpl {
+
+
+    static Logger LOG = LoggerFactory.getLogger(EmailingStep.class)
+
+    public String SUBJECT = &quot;subject&quot;
+    public String CONTENT = &quot;content&quot;
+    public String TO = &quot;to&quot;
+
+    @Resource
+    Mailer mailer
+
+    @Override
+    Callable&lt;Map&lt;String,String&gt;&gt; getStepImpl(Map&lt;String,String&gt; workflowParams, Map&lt;String,String&gt; stepParams) {
+
+        return new Callable&lt;Map&lt;String,String&gt;&gt;() {
+
+            def call() throws Exception {
+                mailer.sendMail(stepParams[SUBJECT], stepParams[CONTENT], stepParams[TO])
+            }
+        }
+    }
+
+}</pre>
+<p><em>Type string:</em> <code>java</code></p>
+<h6>Required</h6>
+<pre class="prettyprint">* className: fully package qualified path to your class</pre>
+<h6>Optional params</h6>
+<pre class="prettyprint">* Anything present in params is available to your custom step</pre>
+<h6>Example</h6>
+<pre class="prettyprint">    step (
+        name : &#39;Read Pointers&#39;,
+        description : &#39;Find pointers to use for the current run from the media_pointers_v3 table&#39;,
+        type : &#39;java&#39;,
+        className : &#39;com.ni.api.gru.impl.commands.javasteps.ReadPointersAndSetTimeParams&#39;,
+        params : [
+            &#39;pointerTables&#39; : &quot;post_fact_${env},${appProps[&#39;oozie.hive.import.table.recent&#39;]},dataview_interest_fact_dashboard_${env}&quot;
+        ]
+    )</pre>
+<a name="make_a_new_step_type"></a><h4>Make a new step type<a class="anchorlink" href="#make_a_new_step_type"></a></h4>
+<p>In order to make a new step type, one must create a new class with the same characteristics as the others in the <code>com.ni.api.gru.impl</code> package, including naming convention.  Simply implement or override <code>init()</code>, <code>fireStep()</code>, <code>checkIfStepComplete()</code>, and <code>cleanup()</code>.  </p>
+<p>If you have any additional needs for params, you can either use the provided stepParams or add a new param type outside of it, but be mindful that you must wire it up in the database layer as well.  Check out <a href="http://svn.colo.networkedinsights.com/repos/repo/projects/apps/trunk/services/gru/gru-impl/jar/src/main/java/com/ni/api/gru/impl/dao/to/StepTo.groovy">StepTo</a> for more information</p>
+<a name="deferred_params"></a><h4>Deferred params<a class="anchorlink" href="#deferred_params"></a></h4>
+<p>Deferred indicates that you&#39;d like Gru to evaluate your snippet at runtime, not during the creation of the workflow request.  This is the key to allowing steps to pass information to later steps.  The same bindings as exist during workflow request creation time exist during evaluation of these params.</p>
+<h6>Example</h6>
+<pre class="prettyprint">params : [
+            &#39;pointerKey&#39; : &quot;dataview_interest_fact_dashboard_${env}&quot;, 
+            &#39;pointerValue&#39; : &#39;deferred: { workflow.workflowParams[&quot;importedTimestamp&quot;] }&#39;
+        ]</pre>
+<p>This example will write the value of the pointer to be the value of the workflow param named <strong>importedTimestamp</strong>, which was set earlier in the workflow.</p>
+<a name="forksteps"></a><h4>ForkSteps<a class="anchorlink" href="#forksteps"></a></h4>
+<p>ForkSteps allows for steps to be processed at the same time.  All steps inside the block will process simultaneously, and the workflow will not continue to the next step or series of steps until all steps in ForkSteps is complete.</p>
+<h6>Example</h6>
+<pre class="prettyprint">forkSteps {
+    step (
+        name : &#39;Write Post Fact Pointer&#39;,
+        description : &#39;Write the pointer for post_fact to indicate we\&#39;re caught up&#39;,
+        type : &#39;java&#39;,
+        className : &#39;com.ni.api.gru.impl.commands.javasteps.WritePointer&#39;,
+        params : [
+            &#39;pointerKey&#39; : &quot;post_fact_${env}&quot;, 
+            &#39;pointerValue&#39; : &#39;deferred: { workflow.workflowParams[&quot;importedTimestamp&quot;] }&#39;
+        ]
+    )
+    step (
+        name : &#39;Jobtrain Dataview Interest Fact&#39;,
+        description : &#39;Load dataview_interest_fact with newly imported post_fact data&#39;,
+        type : &#39;jobtrain&#39;,
+        params : [
+            &quot;workflow.project&quot; : &quot;entityloader&quot;,
+            &quot;workflow.name&quot; : &quot;entityloader-thinslice-dataview-and-interest&quot;,
+            &quot;workflow.version&quot; : &quot;latest&quot;,
+            &quot;queueName&quot; : &quot;import&quot;,
+
+            &quot;suffix&quot; : &quot;_dashboard&quot;,
+
+            &quot;postFactPointer&quot; : &#39;deferred: { workflow.workflowParams[&quot;importedTimestamp&quot;] }&#39;,
+            &quot;dataviewInterestFactPointer&quot; : &#39;deferred: { workflow.workflowParams[&quot;dataviewInterestFactPointer&quot;] }&#39;
+        ],
+        partitionInfo : [
+            partitionInfo (
+                lockType: &#39;READ&#39;, 
+                attribute : &quot;post_fact_${env}.imported_timestamp&quot;, 
+                format : &quot;&quot;,
+                from : &quot;1&quot;,
+                to : &quot;1&quot;
+            ),
+            partitionInfo (
+                lockType: &#39;WRITE&#39;, 
+                attribute : &quot;dataview_interest_fact_dashboard_${env}.authored_date&quot;, 
+                format : &quot;yyyy-MM-dd&quot;,
+                from : timeUtils.getLookbackDay(),
+                to : timeUtils.getImportedDay()
+            ),
+        ],
+    )
+}</pre>
+<a name="how_to_verify_syntax_of_your_workflow"></a><h4>How To Verify Syntax Of Your Workflow<a class="anchorlink" href="#how_to_verify_syntax_of_your_workflow"></a></h4>
+<p>From the workflows directory,</p>
+<pre class="prettyprint">./gradlew parse -Pworkflow=&lt;nameOfWorkflow&gt;</pre>
+<p>Do not use the file extension or the directory, just the name of the workflow.  If the workflow is valid, you will see a message and the object graph will be printed.  If not, you will be shown the descriptive error message.</p>
+<p><strong>Note: this script depends on gru-impl and may need version corrected from time to time!</strong></p>
+<a name="how_to_deploy_your_workflow"></a><h4>How To Deploy Your Workflow<a class="anchorlink" href="#how_to_deploy_your_workflow"></a></h4>
+<p>From the workflows directory,</p>
+<pre class="prettyprint">mvn clean deploy -P&lt;environment&gt;</pre>
+<p>Please be attentive that others may be using your environment, use dev1-workfing for example if it exists, etc.</p>
+<a name="how_to_update_this_document"></a><h4>How To Update This Document<a class="anchorlink" href="#how_to_update_this_document"></a></h4>
+<p>This html is generated from <a href="http://svn.colo.networkedinsights.com/repos/repo/projects/apps/trunk/workflows/gru-workflows/src/markdown/README.md">this markdown file</a> and uses <a href="https://github.com/mixu/markdown-styles">this markdown generator</a> with the mixu-radar theme.</p>
+
+
+<!-- end content -->
+      </div>
+    </div>
+
+    <div class="clear">
+    </div>
+
+    <div id="footer">
+    </div>
+  </div>
+</body>
+</html>
