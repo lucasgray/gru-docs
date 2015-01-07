@@ -22,7 +22,7 @@
     <div id="main">
       <div id="content" class="post">
 
-        <a name="gru_workflow_guide_v1_0"></a><h1>Gru Workflow Guide v1.0<a class="anchorlink" href="#gru_workflow_guide_v1_0"></a></h1>
+        <a name="gru_workflow_guide_v1_1"></a><h1>Gru Workflow Guide v1.1<a class="anchorlink" href="#gru_workflow_guide_v1_1"></a></h1>
 <a name="what_is_gru"></a><h2>What Is Gru<a class="anchorlink" href="#what_is_gru"></a></h2>
 <p><a href="http://gru.colo.networkedinsights.com/index.html">Gru</a> is a swiss army ETL and workflow tool to enable a developer to write workflows combining any downstream system into a cohesive set of actions.  </p>
 <p>It is customized for the Networked Insights environment and the ETL and workflow systems we have in house.  This way, we can leverage the downstream systems for what they&#39;re good at, and shell out to custom processes in a way that is easiest for us (Spring/Java/Mybatis/Postgres/etc).  </p>
@@ -32,6 +32,7 @@
 <p>In Gru, a workflow specifies a number of steps that are to be run in order.  This is useful for grouping together related elements into a cohesive set of procedures with a related purpose - for example, the hourly hive fact load.  </p>
 <p>Gru can interact with the following downstream systems:</p>
 <ul class="list">
+<li>Hive</li>
 <li>PDI</li>
 <li>Jobtrain </li>
 <li>Greenplum</li>
@@ -137,6 +138,24 @@
         &quot;mediaRecentPointer&quot; : &#39;deferred: { workflow.workflowParams[&quot;mediaRecentPointer&quot;] }&#39;,
 
         &quot;mediaTable&quot; : appProps[&#39;oozie.hive.import.table.recent&#39;]
+    ]
+)</pre>
+<a name="hive"></a><h4>Hive<a class="anchorlink" href="#hive"></a></h4>
+<p>Interacts via the Hive Thrift client.  Note that the hive thrift client isn&#39;t great.  We can&#39;t keep an open &quot;ticket&quot; into the jobtracker - the hiveClient call is synchronous.  This means we have to keep a thread alive and check it&#39;s status periodically.  Therefore it is recommended not to use the hive type for long running jobs and prefer shelling out to oozie, because oozie can handle that sort of thing.</p>
+<p><em>Type string:</em> <code>hive</code></p>
+<a name="required_"></a><h5>Required:<a class="anchorlink" href="#required_"></a></h5>
+<ul class="list">
+<li><code>cluster</code>: prod or borg, which hive cluster to use</li>
+<li><code>sql</code>: Hive command to run</li>
+</ul>
+<a name="example_"></a><h5>Example:<a class="anchorlink" href="#example_"></a></h5>
+<pre class="prettyprint">step (
+    name : &#39;hive step&#39;,
+    description : &#39;hive step&#39;,
+    type : &#39;hive&#39;,
+    params : [
+        cluster: &#39;prod&#39;,
+        sql: &#39;SELECT * FROM media_recent_v3_dev limit 5&#39;
     ]
 )</pre>
 <a name="greenplum"></a><h4>Greenplum<a class="anchorlink" href="#greenplum"></a></h4>
@@ -372,6 +391,15 @@ workflow {
         )
     }
 }</pre>
+<a name="ignorefailure"></a><h2>ignoreFailure<a class="anchorlink" href="#ignorefailure"></a></h2>
+<p>By default, the failure of any step fails the entire workflow.  The ignoreFailure step level property will allow the workflow to continue on if an upstream step fails.  You must set it to true, it is false by default.  If a step fails that is allowed to fail, the UI will indicate that the workflow has finished with error.</p>
+<pre class="prettyprint">step (
+    name : &#39;ignore failure step&#39;,
+    description : &#39;&#39;,
+    type : &#39;greenplum&#39;,
+    procedure : &#39;&#39;,
+    ignoreFailure : true
+)</pre>
 <a name="how_to_verify_syntax_of_your_workflow"></a><h2>How To Verify Syntax Of Your Workflow<a class="anchorlink" href="#how_to_verify_syntax_of_your_workflow"></a></h2>
 <p>From the workflows directory,</p>
 <pre class="prettyprint">./gradlew parse -Pworkflow=&lt;nameOfWorkflow&gt;</pre>

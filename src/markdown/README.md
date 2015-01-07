@@ -1,4 +1,4 @@
-# Gru Workflow Guide v1.0
+# Gru Workflow Guide v1.1
 
 ## What Is Gru
 
@@ -17,6 +17,7 @@ In Gru, a workflow specifies a number of steps that are to be run in order.  Thi
 
 Gru can interact with the following downstream systems:
 
+* Hive
 * PDI
 * Jobtrain 
 * Greenplum
@@ -141,6 +142,30 @@ step (
         "mediaRecentPointer" : 'deferred: { workflow.workflowParams["mediaRecentPointer"] }',
         
         "mediaTable" : appProps['oozie.hive.import.table.recent']
+    ]
+)
+```
+
+#### Hive
+
+Interacts via the Hive Thrift client.  Note that the hive thrift client isn't great.  We can't keep an open "ticket" into the jobtracker - the hiveClient call is synchronous.  This means we have to keep a thread alive and check it's status periodically.  Therefore it is recommended not to use the hive type for long running jobs and prefer shelling out to oozie, because oozie can handle that sort of thing.
+
+*Type string:* `hive`
+
+##### Required: 
+* `cluster`: prod or borg, which hive cluster to use
+* `sql`: Hive command to run
+
+##### Example:
+
+```
+step (
+    name : 'hive step',
+    description : 'hive step',
+    type : 'hive',
+    params : [
+		cluster: 'prod',
+		sql: 'SELECT * FROM media_recent_v3_dev limit 5'
     ]
 )
 ```
@@ -421,6 +446,20 @@ workflow {
         )
     }
 }
+```
+
+## ignoreFailure
+
+By default, the failure of any step fails the entire workflow.  The ignoreFailure step level property will allow the workflow to continue on if an upstream step fails.  You must set it to true, it is false by default.  If a step fails that is allowed to fail, the UI will indicate that the workflow has finished with error.
+
+```
+step (
+    name : 'ignore failure step',
+    description : '',
+    type : 'greenplum',
+    procedure : '',
+    ignoreFailure : true
+)
 ```
 
 ## How To Verify Syntax Of Your Workflow
